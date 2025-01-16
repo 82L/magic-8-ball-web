@@ -3,7 +3,7 @@ import Image from "next/image";
 import React, {useRef} from "react";
 import { AudioRecorder } from 'react-audio-voice-recorder';
 export default function Home() {
-
+  const apiUrl = "http://localhost:7214/"
   const mediaRecorder = useRef(null);
   let audioBlobs: BlobPart[] = [];
   const wavBlob = useRef(new Blob())
@@ -18,48 +18,65 @@ export default function Home() {
   }
   const [recording, setRecording] = React.useState(AppState.WaitingToRecordAudio);
 
+  const openAiText =  useRef("null")
   const [buttonImage, setButtonImage] = React.useState("/RecordButton.svg");
   const [buttonImageAlt, setButtonImageAlt] = React.useState("Icone d'enregistrement");
   const [buttonText, setButtonText] = React.useState("Poser une question à la balle 8 magique.");
-  const [audioFile, setAudioFile] =  React.useState("null");
-  function handleClick(){
 
-    switchAppState();
+  function handleClick(){
+    switchAppState(recording);
+    // switch(recording) {
+    //   case AppState.WaitingToRecordAudio:
+    //   
+    //     break;
+    //   case AppState.RecordingAudio:
+    //     switchAppState(AppState.SendingAudio);
+    //     break;
+    //   case AppState.SendingAudio:
+    //     switchAppState(AppState.PlayingAudio);
+    //     break;
+    //   case AppState.PlayingAudio:
+    //     switchAppState(AppState.WaitingToRecordAudio);
+    //     break;
+    // }
   }
 
 
   async function debugCase() {
     var fileData = await fetch("/test.wav")
-    
-    sendAudioToServer(await fileData.blob());
-    
+
+    getOpenAiResponse(await fileData.blob());
+
     // return new File("/test.wav")
   }
 
-  function switchAppState() {
-    switch(recording){
+  function switchAppState(state : AppState) {
+    switch(state){
       case AppState.WaitingToRecordAudio:
-       // .then(
-       //      () => {
-              setRecording(AppState.RecordingAudio);
-              setButtonData(AppState.RecordingAudio);
+        // .then(
+        //      () => {
+        setRecording( AppState.RecordingAudio);
+        setButtonData(AppState.RecordingAudio);
 
-       
-            // },
-            // () =>{
-            //   console.log("failure");
-            // });
+
+        // },
+        // () =>{
+        //   console.log("failure");
+        // });
         startRecording()
         break;
       case AppState.RecordingAudio:
         stopRecording();
         // let blob = new Blob(audioBlobs , {type: "audio/webm"});
         debugCase()
+
         setRecording(AppState.SendingAudio);
         setButtonData(AppState.SendingAudio);
-     
+
         break;
       case AppState.SendingAudio:
+        console.log(openAiText.current);
+        fetchAndPlayAudio(openAiText.current);
         setRecording(AppState.PlayingAudio);
         setButtonData(AppState.PlayingAudio);
         break;
@@ -70,19 +87,48 @@ export default function Home() {
     }
 
   }
-  function sendAudioToServer(audioBlob: Blob)  {
+  function getOpenAiResponse(audioBlob: Blob)  {
     // const formData = new FormData();
     // formData.append("audioFile", audioBlob);
-    return fetch("http://localhost:7214/api/MagicBallFunction", {
+    return fetch(apiUrl + "api/MagicBallAsk", {
       body: audioBlob,
       method: "POST",
     }).then(async (res) => {
-      let fileReader = new FileReader();
-      let blobURl = URL.createObjectURL(await res.blob());
-      setAudioFile(blobURl);
+      openAiText.current = await res.text();
+      switchAppState(AppState.SendingAudio);
       // audioRef.current.play();
-    })
+    });
   };
+
+  async function fetchAndPlayAudio(text: string) {
+    
+    const response = await fetch(apiUrl +'api/MagicBallSpeech', {
+      method: 'POST',
+      // headers: { 'Content-Type': 'text/plain' },
+      body: text,
+    });
+
+    if (!response.ok) {
+      console.error('Failed to fetch audio:', response.statusText);
+      return;
+    }
+    console.log("audio fetched");
+    const audioContext = new (window.AudioContext)();
+    const source = audioContext.createBufferSource();
+
+    const audioData = await response.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(audioData);
+
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    source.onended = () =>{
+      console.log("End Reader");
+      audioContext.suspend();
+      switchAppState(AppState.PlayingAudio);
+    }
+    source.start();
+
+  }
   function setButtonData(appState: AppState) {
     switch(appState){
       case AppState.WaitingToRecordAudio:
@@ -111,9 +157,9 @@ export default function Home() {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
   async function startRecording() {
-    
 
-    
+
+
     // try {
     //   stream.current = await navigator.mediaDevices.getUserMedia(constraints);
     //
@@ -146,7 +192,7 @@ export default function Home() {
 
   async function stopRecording () {
     console.log("Stopping recording");
-    
+
     // mediaRecorder.current.requestData();
     // mediaRecorder.current.stop();
     // stream.current.getAudioTracks().forEach(track => {
@@ -157,7 +203,7 @@ export default function Home() {
     // console.log("download");
     // await downloadWav(wavBlob.current, false, "test.wav");
     // console.log("sending");
-    // await sendAudioToServer(wavBlob.current);
+    // await getOpenAiResponse(wavBlob.current);
     // navigator.mediaDevices.getUserMedia({
     //   audio: false
     // });
@@ -194,7 +240,6 @@ export default function Home() {
           </div>
           <p className="text-center">En posant une question, vous acceptez que l'enregistrement audio de votre voix soit traité par le service
             Azure de Microsoft.</p>
-          <audio ref={audioRef} src={audioFile} controls></audio>
         </main>
         <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
           <a
